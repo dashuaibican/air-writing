@@ -1,0 +1,1118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>隔空写字 - 手势交互系统</title>
+<style>
+  :root {
+    --bg: #1a1a2e;
+    --panel-bg: rgba(20, 20, 40, 0.92);
+    --text: #e0e0e0;
+    --accent: #ff6b6b;
+    --accent2: #4ecdc4;
+    --accent3: #ffe66d;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    width: 100vw; height: 100vh; overflow: hidden;
+    background: #000;
+    font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+  }
+
+  #container {
+    position: relative;
+    width: 100vw; height: 100vh;
+    overflow: hidden;
+  }
+
+  #video {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1);
+    opacity: 0.9;
+    image-rendering: auto;
+    filter: none;
+  }
+
+  #drawingCanvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+  }
+
+  #particleCanvas {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 5;
+  }
+
+  /* Cursor indicator */
+  #cursor {
+    position: absolute;
+    pointer-events: none;
+    z-index: 10;
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.8);
+    background: rgba(255,107,107,0.4);
+    transform: translate(-50%, -50%);
+    display: none;
+    transition: width 0.15s, height 0.15s, background 0.15s;
+  }
+  #cursor.drawing {
+    background: rgba(255,107,107,0.9);
+    width: 12px; height: 12px;
+  }
+  #cursor.eraser {
+    background: rgba(255,255,255,0.7);
+    border-color: rgba(0,0,0,0.5);
+  }
+
+  /* Toolbar */
+  #toolbar {
+    position: absolute;
+    top: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 20;
+    display: flex;
+    gap: 12px;
+    padding: 14px 22px;
+    background: var(--panel-bg);
+    border-radius: 40px;
+    border: 1px solid rgba(255,255,255,0.15);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    align-items: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.35s ease, transform 0.35s ease;
+    transform: translateX(-50%) translateY(-20px);
+  }
+  #toolbar.visible {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  .tool-group {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .tool-divider {
+    width: 1px;
+    height: 24px;
+    background: rgba(255,255,255,0.2);
+    margin: 0 4px;
+  }
+
+  .tool-btn {
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    background: rgba(255,255,255,0.08);
+    color: #fff;
+    cursor: pointer;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    position: relative;
+  }
+  .tool-btn:hover, .tool-btn.hovered {
+    border-color: rgba(255,255,255,0.6);
+    background: rgba(255,255,255,0.18);
+    transform: scale(1.08);
+  }
+  .tool-btn.active {
+    border-color: var(--accent2);
+    background: rgba(78,205,196,0.2);
+    box-shadow: 0 0 16px rgba(78,205,196,0.3);
+  }
+  .tool-btn.active.hovered {
+    border-color: #fff;
+    box-shadow: 0 0 20px rgba(255,255,255,0.5);
+  }
+
+  .color-btn {
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.2);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .color-btn:hover, .color-btn.hovered {
+    border-color: #fff;
+    transform: scale(1.15);
+    box-shadow: 0 0 12px currentColor;
+  }
+  .color-btn.active {
+    border-color: #fff;
+    border-width: 3px;
+    box-shadow: 0 0 14px currentColor;
+  }
+
+  .size-btn {
+    height: 32px;
+    min-width: 32px;
+    padding: 0 10px;
+    border-radius: 16px;
+    border: 2px solid rgba(255,255,255,0.2);
+    background: rgba(255,255,255,0.06);
+    color: #fff;
+    cursor: pointer;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .size-btn:hover, .size-btn.hovered {
+    border-color: #fff;
+    background: rgba(255,255,255,0.16);
+  }
+  .size-btn.active {
+    border-color: var(--accent3);
+    background: rgba(255,230,109,0.2);
+  }
+  .size-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #fff;
+    display: inline-block;
+    flex-shrink: 0;
+  }
+
+  /* Status indicator */
+  #status {
+    position: absolute;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 20;
+    padding: 8px 20px;
+    background: rgba(0,0,0,0.65);
+    border-radius: 20px;
+    color: rgba(255,255,255,0.8);
+    font-size: 13px;
+    letter-spacing: 0.5px;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    transition: all 0.3s;
+    pointer-events: none;
+  }
+
+  /* Gesture hint overlay */
+  #hint {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 15;
+    color: rgba(255,255,255,0.6);
+    font-size: 15px;
+    text-align: center;
+    line-height: 1.8;
+    pointer-events: none;
+    transition: opacity 0.5s;
+    opacity: 0;
+  }
+
+  /* Loading */
+  #loading {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 30;
+    color: #fff;
+    font-size: 16px;
+    text-align: center;
+  }
+
+  /* Fullscreen button */
+  #fullscreenBtn {
+    position: absolute;
+    top: 16px; right: 16px;
+    z-index: 25;
+    width: 38px; height: 38px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.25);
+    background: rgba(0,0,0,0.45);
+    color: #fff;
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    transition: all 0.2s;
+  }
+  #fullscreenBtn:hover {
+    background: rgba(0,0,0,0.65);
+    border-color: rgba(255,255,255,0.5);
+  }
+  .spinner {
+    width: 40px; height: 40px;
+    margin: 0 auto 16px;
+    border: 3px solid rgba(255,255,255,0.2);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  @media (max-width: 768px) {
+    #toolbar {
+      gap: 6px;
+      padding: 10px 14px;
+      border-radius: 30px;
+    }
+    .tool-btn { width: 34px; height: 34px; font-size: 15px; }
+    .color-btn { width: 26px; height: 26px; }
+    .size-btn { height: 26px; font-size: 11px; padding: 0 8px; }
+    .tool-divider { margin: 0 2px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="container">
+  <video id="video" autoplay playsinline></video>
+  <canvas id="drawingCanvas"></canvas>
+  <canvas id="particleCanvas"></canvas>
+
+  <div id="cursor"></div>
+
+  <div id="toolbar">
+    <div class="tool-group">
+      <button class="tool-btn active" data-tool="pen" title="笔">✏️</button>
+      <button class="tool-btn" data-tool="eraser" title="橡皮擦">🧹</button>
+    </div>
+    <div class="tool-divider"></div>
+    <div class="tool-group" id="colorGroup">
+      <button class="color-btn active" data-color="#ffffff" style="background:#ffffff;"></button>
+      <button class="color-btn" data-color="#ff6b6b" style="background:#ff6b6b;"></button>
+      <button class="color-btn" data-color="#4ecdc4" style="background:#4ecdc4;"></button>
+      <button class="color-btn" data-color="#ffe66d" style="background:#ffe66d;"></button>
+      <button class="color-btn" data-color="#a29bfe" style="background:#a29bfe;"></button>
+      <button class="color-btn" data-color="#fd79a8" style="background:#fd79a8;"></button>
+      <button class="color-btn" data-color="#00cec9" style="background:#00cec9;"></button>
+    </div>
+    <div class="tool-divider"></div>
+    <div class="tool-group" id="sizeGroup">
+      <button class="size-btn" data-size="3"><span class="size-dot" style="width:4px;height:4px;"></span> 细</button>
+      <button class="size-btn active" data-size="6"><span class="size-dot" style="width:8px;height:8px;"></span> 中</button>
+      <button class="size-btn" data-size="12"><span class="size-dot" style="width:14px;height:14px;"></span> 粗</button>
+    </div>
+  </div>
+
+  <div id="status">🖐 张开手掌 → 打开工具栏</div>
+  <div id="hint">
+    🖐 张开手掌：打开/关闭工具栏<br>
+    ☝️ 食指指向：选择工具<br>
+    🤏 拇指+食指捏合：隔空写字<br>
+    🤞 双手食指：缩放文字<br>
+    ✌️ 食指+中指竖起：雪花消散<br>
+    <small style="opacity:0.5">按 C 清屏 | P 笔 | E 橡皮 | F 全屏 | H 切换提示</small>
+  </div>
+  <button id="fullscreenBtn" title="全屏 (F)">⛶</button>
+  <div id="loading"><div class="spinner"></div>正在加载手势模型…</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js"></script>
+
+
+<script>
+(function() {
+  'use strict';
+  try {
+
+  // ─────────────────── DOM refs ───────────────────
+  const video       = document.getElementById('video');
+  const drawCanvas  = document.getElementById('drawingCanvas');
+  const drawCtx     = drawCanvas.getContext('2d');
+  const partCanvas  = document.getElementById('particleCanvas');
+  const partCtx     = partCanvas.getContext('2d');
+  const cursorEl    = document.getElementById('cursor');
+  const toolbar     = document.getElementById('toolbar');
+  const statusEl    = document.getElementById('status');
+  const hintEl      = document.getElementById('hint');
+  const loadingEl   = document.getElementById('loading');
+
+  // ─────────────────── State ───────────────────
+  const STATE = {
+    // UI
+    uiVisible: false,
+    hoveredBtn: null,
+    hoverDwellTimer: null,
+    hoverDwellStart: 0,
+    DWELL_MS: 800,
+
+    // Tools
+    tool: 'pen',          // 'pen' | 'eraser'
+    color: '#ffffff',
+    size: 6,
+
+    // Drawing
+    isDrawing: false,
+    strokes: [],          // {points:[{x,y}], color, size, tool}
+    currentStroke: null,
+
+    // View transform (world -> screen)
+    viewScale: 1,
+    viewOffsetX: 0,
+    viewOffsetY: 0,
+
+    // Scaling (two-hand)
+    isScaling: false,
+    scaleBase: { scale: 1, ox: 0, oy: 0 },
+    scaleInit: { dist: 0, midX: 0, midY: 0, worldMidX: 0, worldMidY: 0 },
+
+    // Particles
+    particles: [],
+    isDissolving: false,
+
+    // Gesture debounce
+    palmFrames: 0,
+    palmRequired: 8,
+    spreadFrames: 0,
+    spreadRequired: 10,
+
+    // Hand data
+    hands: [],   // [{landmarks, handedness, gestures}]
+
+    // Frame timing
+    lastTime: 0,
+  };
+
+  // ─────────────────── MediaPipe Setup ───────────────────
+  let handsInstance = null;
+
+  function locateFile(file) {
+    return `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${file}`;
+  }
+
+  // ─────────────────── Canvas Resize ───────────────────
+  function resizeCanvases() {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const dpr = window.devicePixelRatio || 1;
+
+    [drawCanvas, partCanvas].forEach(c => {
+      c.width = w * dpr;
+      c.height = h * dpr;
+      c.style.width = w + 'px';
+      c.style.height = h + 'px';
+    });
+    drawCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    partCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', resizeCanvases);
+
+  // ─────────────────── Gesture Detection ───────────────────
+  function isFingerExtended(lm, tipI, pipI) {
+    // Finger extended if tip is higher (smaller y) than PIP joint
+    return lm[tipI].y < lm[pipI].y - 0.02;
+  }
+
+  function detectGestures(landmarks) {
+    const g = {
+      indexUp:    isFingerExtended(landmarks, 8, 6),
+      middleUp:   isFingerExtended(landmarks, 12, 10),
+      ringUp:     isFingerExtended(landmarks, 16, 14),
+      pinkyUp:    isFingerExtended(landmarks, 20, 18),
+      thumbUp:    landmarks[4].y < landmarks[3].y - 0.01, // thumb tip above IP
+    };
+
+    // Derived gestures
+    g.openPalm   = g.indexUp && g.middleUp && g.ringUp && g.pinkyUp;
+    g.pointing   = g.indexUp && !g.middleUp && !g.ringUp && !g.pinkyUp;
+    g.vSign      = g.indexUp && g.middleUp && !g.ringUp && !g.pinkyUp;
+
+    // Pinch: thumb tip close to index tip
+    const thumbTip = landmarks[4];
+    const indexTip = landmarks[8];
+    g.pinchDist = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y);
+    g.pinching = g.pinchDist < 0.055;
+
+    // V-spread: index+middle up AND tips far apart
+    g.indexMiddleDist = Math.hypot(
+      landmarks[8].x - landmarks[12].x,
+      landmarks[8].y - landmarks[12].y
+    );
+    g.vSpread = g.vSign && g.indexMiddleDist > 0.09;
+
+    return g;
+  }
+
+  // ─────────────────── Coordinate Mapping ───────────────────
+  function getVideoDisplayRect() {
+    const cw = window.innerWidth;
+    const ch = window.innerHeight;
+    const vw = video.videoWidth || 1280;
+    const vh = video.videoHeight || 720;
+    if (vw === 0 || vh === 0) return { width: cw, height: ch, left: 0, top: 0 };
+
+    const scale = Math.max(cw / vw, ch / vh);
+    const dw = vw * scale;
+    const dh = vh * scale;
+    const ox = (cw - dw) / 2;
+    const oy = (ch - dh) / 2;
+    return { width: dw, height: dh, left: ox, top: oy };
+  }
+
+  function landmarkToScreen(lm) {
+    const rect = getVideoDisplayRect();
+    return {
+      x: (1 - lm.x) * rect.width + rect.left,
+      y: lm.y * rect.height + rect.top,
+    };
+  }
+
+  function screenToWorld(sx, sy) {
+    return {
+      x: (sx - STATE.viewOffsetX) / STATE.viewScale,
+      y: (sy - STATE.viewOffsetY) / STATE.viewScale,
+    };
+  }
+
+  function worldToScreen(wx, wy) {
+    return {
+      x: wx * STATE.viewScale + STATE.viewOffsetX,
+      y: wy * STATE.viewScale + STATE.viewOffsetY,
+    };
+  }
+
+  // ─────────────────── Drawing ───────────────────
+  function redrawAll() {
+    drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+
+    for (const stroke of STATE.strokes) {
+      if (stroke.points.length < 1) continue;
+      drawCtx.save();
+      drawCtx.lineCap = 'round';
+      drawCtx.lineJoin = 'round';
+      drawCtx.lineWidth = stroke.size * STATE.viewScale;
+
+      if (stroke.tool === 'eraser') {
+        drawCtx.globalCompositeOperation = 'destination-out';
+        drawCtx.strokeStyle = 'rgba(0,0,0,1)';
+      } else {
+        drawCtx.globalCompositeOperation = 'source-over';
+        drawCtx.strokeStyle = stroke.color;
+      }
+
+      drawCtx.beginPath();
+      const p0 = worldToScreen(stroke.points[0].x, stroke.points[0].y);
+      drawCtx.moveTo(p0.x, p0.y);
+      for (let i = 1; i < stroke.points.length; i++) {
+        const pi = worldToScreen(stroke.points[i].x, stroke.points[i].y);
+        drawCtx.lineTo(pi.x, pi.y);
+      }
+      drawCtx.stroke();
+      drawCtx.restore();
+    }
+  }
+
+  function startStroke(screenX, screenY) {
+    const w = screenToWorld(screenX, screenY);
+    STATE.currentStroke = {
+      points: [{ x: w.x, y: w.y }],
+      color: STATE.color,
+      size: STATE.size,
+      tool: STATE.tool,
+    };
+    STATE.isDrawing = true;
+  }
+
+  function continueStroke(screenX, screenY) {
+    if (!STATE.currentStroke) return;
+    const w = screenToWorld(screenX, screenY);
+    STATE.currentStroke.points.push({ x: w.x, y: w.y });
+
+    // Draw incremental segment
+    const pts = STATE.currentStroke.points;
+    if (pts.length < 2) return;
+
+    drawCtx.save();
+    drawCtx.lineCap = 'round';
+    drawCtx.lineJoin = 'round';
+    drawCtx.lineWidth = STATE.currentStroke.size * STATE.viewScale;
+
+    if (STATE.currentStroke.tool === 'eraser') {
+      drawCtx.globalCompositeOperation = 'destination-out';
+      drawCtx.strokeStyle = 'rgba(0,0,0,1)';
+    } else {
+      drawCtx.globalCompositeOperation = 'source-over';
+      drawCtx.strokeStyle = STATE.currentStroke.color;
+    }
+
+    drawCtx.beginPath();
+    const p0 = worldToScreen(pts[pts.length - 2].x, pts[pts.length - 2].y);
+    const p1 = worldToScreen(pts[pts.length - 1].x, pts[pts.length - 1].y);
+    drawCtx.moveTo(p0.x, p0.y);
+    drawCtx.lineTo(p1.x, p1.y);
+    drawCtx.stroke();
+    drawCtx.restore();
+  }
+
+  function endStroke() {
+    if (STATE.currentStroke && STATE.currentStroke.points.length > 0) {
+      STATE.strokes.push(STATE.currentStroke);
+    }
+    STATE.currentStroke = null;
+    STATE.isDrawing = false;
+  }
+
+  // ─────────────────── Particles (Snow Dissolve) ───────────────────
+  function spawnParticles() {
+    // Sample the drawing canvas for non-empty pixels
+    const w = drawCanvas.width;
+    const h = drawCanvas.height;
+    const dpr = window.devicePixelRatio || 1;
+
+    // Use adaptive step: larger step for high-res canvases
+    const totalPixels = w * h;
+    let step = 3;
+    if (totalPixels > 4000000) step = 5;
+    if (totalPixels > 8000000) step = 7;
+
+    const imageData = drawCtx.getImageData(0, 0, w, h);
+    const pixels = imageData.data;
+    const newParticles = [];
+
+    for (let y = 0; y < h; y += step) {
+      for (let x = 0; x < w; x += step) {
+        const i = (y * w + x) * 4;
+        const a = pixels[i + 3];
+        if (a > 20) {
+          const r = pixels[i];
+          const g = pixels[i + 1];
+          const b = pixels[i + 2];
+          newParticles.push({
+            x: x / dpr,
+            y: y / dpr,
+            vx: (Math.random() - 0.5) * 2.5,
+            vy: -(Math.random() * 5 + 2),
+            opacity: 0.85 + Math.random() * 0.15,
+            size: 1.5 + Math.random() * 3.5,
+            color: `rgb(${r},${g},${b})`,
+            swayAmp: 0.5 + Math.random() * 1.5,
+            swayFreq: 0.02 + Math.random() * 0.04,
+            swayPhase: Math.random() * Math.PI * 2,
+            gravity: 0.04 + Math.random() * 0.08,
+            friction: 0.995 + Math.random() * 0.004,
+            life: 1.0,
+            decay: 0.003 + Math.random() * 0.007,
+          });
+        }
+      }
+    }
+
+    // Limit particles for performance (shuffle and trim)
+    if (newParticles.length > 3000) {
+      for (let i = newParticles.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [newParticles[i], newParticles[j]] = [newParticles[j], newParticles[i]];
+      }
+      newParticles.length = 3000;
+    }
+
+    STATE.particles = newParticles;
+    STATE.isDissolving = true;
+    drawCtx.clearRect(0, 0, w, h);
+    STATE.strokes = [];
+  }
+
+  function updateParticles() {
+    if (!STATE.isDissolving || STATE.particles.length === 0) return;
+
+    partCtx.clearRect(0, 0, partCanvas.width, partCanvas.height);
+    let alive = 0;
+
+    for (const p of STATE.particles) {
+      p.life -= p.decay;
+      if (p.life <= 0) continue;
+      alive++;
+
+      p.vy += p.gravity;
+      p.vx *= p.friction;
+      p.vy *= p.friction;
+      p.vx += Math.sin(p.swayPhase) * p.swayAmp * 0.03;
+      p.swayPhase += p.swayFreq;
+
+      p.x += p.vx;
+      p.y += p.vy;
+
+      const alpha = Math.max(0, p.life * p.opacity);
+      partCtx.fillStyle = p.color;
+      partCtx.globalAlpha = alpha;
+      partCtx.beginPath();
+      partCtx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+      partCtx.fill();
+    }
+
+    partCtx.globalAlpha = 1;
+
+    if (alive === 0) {
+      STATE.particles = [];
+      STATE.isDissolving = false;
+      partCtx.clearRect(0, 0, partCanvas.width, partCanvas.height);
+    }
+  }
+
+  // ─────────────────── Scaling ───────────────────
+  function startScaling(hand1LM, hand2LM) {
+    const i1 = landmarkToScreen(hand1LM[8]);
+    const i2 = landmarkToScreen(hand2LM[8]);
+    const midX = (i1.x + i2.x) / 2;
+    const midY = (i1.y + i2.y) / 2;
+    const dist = Math.hypot(i2.x - i1.x, i2.y - i1.y);
+
+    if (dist < 30) return; // too close, ignore
+
+    STATE.isScaling = true;
+    STATE.scaleBase = {
+      scale: STATE.viewScale,
+      ox: STATE.viewOffsetX,
+      oy: STATE.viewOffsetY,
+    };
+    STATE.scaleInit = {
+      dist: dist,
+      midX: midX,
+      midY: midY,
+      worldMidX: (midX - STATE.viewOffsetX) / STATE.viewScale,
+      worldMidY: (midY - STATE.viewOffsetY) / STATE.viewScale,
+    };
+  }
+
+  function updateScaling(hand1LM, hand2LM) {
+    if (!STATE.isScaling) return;
+
+    const i1 = landmarkToScreen(hand1LM[8]);
+    const i2 = landmarkToScreen(hand2LM[8]);
+    const dist = Math.hypot(i2.x - i1.x, i2.y - i1.y);
+    if (dist < 20) return;
+
+    const factor = dist / STATE.scaleInit.dist;
+    const newScale = Math.max(0.2, Math.min(5, STATE.scaleBase.scale * factor));
+
+    // Keep world point under midpoint fixed
+    const wmx = STATE.scaleInit.worldMidX;
+    const wmy = STATE.scaleInit.worldMidY;
+    const midX = (i1.x + i2.x) / 2;
+    const midY = (i1.y + i2.y) / 2;
+
+    STATE.viewScale = newScale;
+    STATE.viewOffsetX = midX - wmx * newScale;
+    STATE.viewOffsetY = midY - wmy * newScale;
+
+    redrawAll();
+  }
+
+  function stopScaling() {
+    STATE.isScaling = false;
+  }
+
+  // ─────────────────── Toolbar Interaction ───────────────────
+  function setToolbarVisible(visible) {
+    STATE.uiVisible = visible;
+    if (visible) {
+      toolbar.classList.add('visible');
+      hintEl.style.opacity = '0';
+    } else {
+      toolbar.classList.remove('visible');
+      clearHover();
+    }
+  }
+
+  function getToolbarButtons() {
+    return Array.from(toolbar.querySelectorAll('.tool-btn, .color-btn, .size-btn'));
+  }
+
+  function findButtonAt(screenX, screenY) {
+    const buttons = getToolbarButtons();
+    for (const btn of buttons) {
+      const rect = btn.getBoundingClientRect();
+      // Expand hit area slightly
+      const margin = 8;
+      if (screenX >= rect.left - margin && screenX <= rect.right + margin &&
+          screenY >= rect.top - margin && screenY <= rect.bottom + margin) {
+        return btn;
+      }
+    }
+    return null;
+  }
+
+  function clearHover() {
+    if (STATE.hoveredBtn) {
+      STATE.hoveredBtn.classList.remove('hovered');
+      STATE.hoveredBtn = null;
+    }
+    if (STATE.hoverDwellTimer) {
+      clearTimeout(STATE.hoverDwellTimer);
+      STATE.hoverDwellTimer = null;
+    }
+  }
+
+  function setHover(btn) {
+    if (STATE.hoveredBtn === btn) return;
+    clearHover();
+    STATE.hoveredBtn = btn;
+    if (btn) {
+      btn.classList.add('hovered');
+      STATE.hoverDwellStart = performance.now();
+      STATE.hoverDwellTimer = setTimeout(() => activateButton(btn), STATE.DWELL_MS);
+    }
+  }
+
+  function activateButton(btn) {
+    if (!btn) return;
+
+    // Tool buttons
+    if (btn.dataset.tool) {
+      STATE.tool = btn.dataset.tool;
+      toolbar.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      statusEl.textContent = STATE.tool === 'pen' ? '✏️ 笔模式' : '🧹 橡皮擦模式';
+    }
+
+    // Color buttons
+    if (btn.dataset.color) {
+      STATE.color = btn.dataset.color;
+      toolbar.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      statusEl.textContent = '🎨 颜色: ' + btn.dataset.color;
+    }
+
+    // Size buttons
+    if (btn.dataset.size) {
+      STATE.size = parseInt(btn.dataset.size);
+      toolbar.querySelectorAll('.size-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const labels = { '3': '细', '6': '中', '12': '粗' };
+      statusEl.textContent = '📏 笔刷: ' + (labels[btn.dataset.size] || btn.dataset.size);
+    }
+
+    // Brief flash
+    btn.style.transform = 'scale(1.2)';
+    setTimeout(() => {
+      btn.style.transform = '';
+      clearHover();
+    }, 200);
+  }
+
+  // ─────────────────── Main Processing ───────────────────
+  function processHands(results) {
+    STATE.hands = [];
+
+    if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+      // No hands detected
+      if (STATE.palmFrames > 0) STATE.palmFrames--;
+      else if (STATE.palmFrames < 0) STATE.palmFrames++;
+      STATE.spreadFrames = Math.max(0, STATE.spreadFrames - 1);
+      if (STATE.isDrawing) endStroke();
+      updateCursor(null);
+      return;
+    }
+
+    const hands = [];
+    for (let i = 0; i < results.multiHandLandmarks.length; i++) {
+      const lm = results.multiHandLandmarks[i];
+      const hd = results.multiHandedness[i];
+      const gestures = detectGestures(lm);
+      hands.push({ landmarks: lm, handedness: hd, gestures });
+    }
+
+    STATE.hands = hands;
+    // Sort: prefer right hand first for single-hand gestures
+    hands.sort((a, b) => {
+      if (a.handedness.label === 'Right') return -1;
+      if (b.handedness.label === 'Right') return 1;
+      return 0;
+    });
+
+    const primary = hands[0];
+    const secondary = hands.length > 1 ? hands[1] : null;
+    const pg = primary.gestures;
+
+    // ── Update cursor ──
+    const cursorScreen = landmarkToScreen(primary.landmarks[8]); // index tip
+    updateCursor(cursorScreen, pg.pinching);
+
+    // ── Gesture: Palm (toggle UI) ──
+    if (pg.openPalm && !STATE.isDrawing && !STATE.isScaling && !STATE.isDissolving) {
+      STATE.palmFrames++;
+      if (!STATE.uiVisible && STATE.palmFrames >= STATE.palmRequired) {
+        // Open UI panel
+        setToolbarVisible(true);
+        statusEl.textContent = '☝️ 用食指选择工具（悬停0.8秒确认）';
+        STATE.palmFrames = 0; // reset counter for close detection
+      } else if (STATE.uiVisible && STATE.palmFrames >= STATE.palmRequired) {
+        // Close UI panel
+        setToolbarVisible(false);
+        statusEl.textContent = '🤏 捏合手指 → 开始写字';
+        STATE.palmFrames = -25; // cooldown to prevent immediate re-trigger
+      }
+    } else {
+      // Drift back toward 0 (handles both positive counts and negative cooldowns)
+      if (STATE.palmFrames > 0) STATE.palmFrames--;
+      else if (STATE.palmFrames < 0) STATE.palmFrames++;
+    }
+
+    // ── Gesture: V-Sign (dissolve) ──
+    if (pg.vSign && pg.indexMiddleDist > 0.05 && !STATE.isDrawing && !STATE.isScaling && !STATE.uiVisible && !STATE.isDissolving) {
+      STATE.spreadFrames++;
+      if (STATE.spreadFrames >= STATE.spreadRequired && STATE.strokes.length > 0) {
+        spawnParticles();
+        statusEl.textContent = '❄️ 文字正在消散…';
+        STATE.spreadFrames = 0;
+      }
+    } else {
+      STATE.spreadFrames = Math.max(0, STATE.spreadFrames - 1);
+    }
+
+    // ── UI Interaction: Pointing to select ──
+    if (STATE.uiVisible && pg.pointing) {
+      const btn = findButtonAt(cursorScreen.x, cursorScreen.y);
+      setHover(btn);
+    } else if (STATE.uiVisible && !pg.pointing) {
+      clearHover();
+    }
+
+    // ── Gesture: Two-hand scaling ──
+    if (hands.length >= 2 && !STATE.uiVisible && !STATE.isDrawing && !STATE.isDissolving) {
+      const sg = secondary.gestures;
+      if (pg.pointing && sg.pointing) {
+        if (!STATE.isScaling) {
+          if (STATE.strokes.length > 0) {
+            startScaling(primary.landmarks, secondary.landmarks);
+            statusEl.textContent = '🔍 缩放中… 双指距离控制大小';
+          }
+        } else {
+          updateScaling(primary.landmarks, secondary.landmarks);
+        }
+      } else if (STATE.isScaling) {
+        stopScaling();
+        statusEl.textContent = '🤏 捏合手指 → 开始写字';
+      }
+    } else if (STATE.isScaling && hands.length < 2) {
+      stopScaling();
+      statusEl.textContent = '🤏 捏合手指 → 开始写字';
+    }
+
+    // ── Gesture: Pinch (drawing) ──
+    if (pg.pinching && !STATE.uiVisible && !STATE.isScaling && !STATE.isDissolving) {
+      if (!STATE.isDrawing) {
+        startStroke(cursorScreen.x, cursorScreen.y);
+        statusEl.textContent = STATE.tool === 'pen' ? '✍️ 正在写字…' : '🧹 正在擦除…';
+      } else {
+        continueStroke(cursorScreen.x, cursorScreen.y);
+      }
+    } else if (STATE.isDrawing && !pg.pinching) {
+      endStroke();
+      if (!STATE.uiVisible) {
+        statusEl.textContent = '🤏 捏合手指 → 开始写字';
+      }
+    }
+  }
+
+  function updateCursor(screenPos, drawing) {
+    if (!screenPos) {
+      cursorEl.style.display = 'none';
+      return;
+    }
+    cursorEl.style.display = 'block';
+    cursorEl.style.left = screenPos.x + 'px';
+    cursorEl.style.top = screenPos.y + 'px';
+
+    cursorEl.classList.remove('drawing', 'eraser');
+    if (drawing) {
+      cursorEl.classList.add(STATE.tool === 'eraser' ? 'eraser' : 'drawing');
+    } else if (STATE.tool === 'eraser') {
+      cursorEl.classList.add('eraser');
+    }
+  }
+
+  // ─────────────────── Animation Loop ───────────────────
+  function animate(timestamp) {
+    STATE.lastTime = timestamp;
+
+    // Update particles
+    if (STATE.isDissolving) {
+      updateParticles();
+    }
+
+    requestAnimationFrame(animate);
+  }
+
+  // ─────────────────── Initialize ───────────────────
+  async function init() {
+    resizeCanvases();
+
+    // Set initial active states in toolbar
+    toolbar.querySelector('[data-tool="pen"]').classList.add('active');
+    toolbar.querySelector('[data-color="#ffffff"]').classList.add('active');
+    toolbar.querySelector('[data-size="6"]').classList.add('active');
+
+    // Initialize MediaPipe Hands
+    handsInstance = new Hands({
+      locateFile: locateFile,
+    });
+
+    handsInstance.setOptions({
+      maxNumHands: 2,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.7,
+      minTrackingConfidence: 0.6,
+    });
+
+    handsInstance.onResults(processHands);
+
+    // Setup camera
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+      });
+      video.srcObject = stream;
+      await video.play();
+
+      // Use MediaPipe Camera helper
+      const Camera = window.Camera;
+      if (Camera) {
+        const camera = new Camera(video, {
+          onFrame: async () => {
+            await handsInstance.send({ image: video });
+          },
+          width: 1280,
+          height: 720,
+        });
+        camera.start();
+      } else {
+        // Fallback: manual frame processing
+        async function processFrame() {
+          if (video.readyState >= 2) {
+            await handsInstance.send({ image: video });
+          }
+          requestAnimationFrame(processFrame);
+        }
+        processFrame();
+      }
+    } catch (err) {
+      loadingEl.innerHTML = '<div style="color:#ff6b6b;font-size:18px;">⚠️ 摄像头访问失败</div>' +
+        '<div style="color:#aaa;margin-top:8px;">请允许浏览器使用摄像头后刷新页面</div>';
+      console.error('Camera error:', err);
+      return;
+    }
+
+    // Hide loading
+    loadingEl.style.display = 'none';
+
+    // Start animation loop
+    requestAnimationFrame(animate);
+  }
+
+  // ─────────────────── Start ───────────────────
+  // Wait for MediaPipe to load (with timeout)
+  let waitAttempts = 0;
+  function waitForMediaPipe() {
+    waitAttempts++;
+    if (window.Hands) {
+      init();
+    } else if (waitAttempts > 50) {
+      // ~10 seconds timeout
+      loadingEl.innerHTML =
+        '<div style="color:#ff6b6b;font-size:18px;">⚠️ 模型加载超时</div>' +
+        '<div style="color:#aaa;margin-top:8px;font-size:13px;">请检查网络连接后刷新页面</div>' +
+        '<div style="color:#888;margin-top:6px;font-size:11px;">CDN: cdn.jsdelivr.net</div>';
+    } else {
+      setTimeout(waitForMediaPipe, 200);
+    }
+  }
+
+  // Kick off
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', waitForMediaPipe);
+  } else {
+    waitForMediaPipe();
+  }
+
+  // ─────────────────── Fullscreen ───────────────────
+  function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+      document.getElementById('fullscreenBtn').textContent = '⛶';
+    } else {
+      document.exitFullscreen();
+    }
+  }
+  document.getElementById('fullscreenBtn').addEventListener('click', toggleFullscreen);
+  document.addEventListener('fullscreenchange', () => {
+    const btn = document.getElementById('fullscreenBtn');
+    btn.textContent = document.fullscreenElement ? '⛝' : '⛶';
+  });
+
+  // ─────────────────── Keyboard shortcuts ───────────────────
+  window.addEventListener('keydown', (e) => {
+    switch (e.key.toLowerCase()) {
+      case 'c':
+        // Clear all strokes
+        STATE.strokes = [];
+        STATE.particles = [];
+        STATE.isDissolving = false;
+        STATE.viewScale = 1;
+        STATE.viewOffsetX = 0;
+        STATE.viewOffsetY = 0;
+        drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+        partCtx.clearRect(0, 0, partCanvas.width, partCanvas.height);
+        statusEl.textContent = '🗑️ 画布已清空';
+        setTimeout(() => {
+          statusEl.textContent = '🤏 捏合手指 → 开始写字';
+        }, 1500);
+        break;
+      case 'p':
+        STATE.tool = 'pen';
+        toolbar.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+        toolbar.querySelector('[data-tool="pen"]').classList.add('active');
+        statusEl.textContent = '✏️ 切换到笔模式';
+        break;
+      case 'e':
+        STATE.tool = 'eraser';
+        toolbar.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+        toolbar.querySelector('[data-tool="eraser"]').classList.add('active');
+        statusEl.textContent = '🧹 切换到橡皮擦模式';
+        break;
+      case 'h':
+        hintEl.style.opacity = hintEl.style.opacity === '0' ? '1' : '0';
+        break;
+      case 'f':
+        toggleFullscreen();
+        break;
+    }
+  });
+
+  } catch (e) {
+    document.getElementById('loading').innerHTML =
+      '<div style="color:#ff6b6b;font-size:18px;">⚠️ 脚本错误</div>' +
+      '<div style="color:#aaa;margin-top:8px;font-size:12px;max-width:80vw;word-break:break-all;">' + e.message + '</div>';
+    console.error(e);
+  }
+})();
+</script>
+</body>
+</html>
