@@ -320,7 +320,7 @@
     </div>
   </div>
 
-  <div id="status">🖐 张开手掌 → 打开工具栏</div>
+  <div id="status">🖐 张开手掌 → 工具栏 | ✊ 收起手指 → 选择 | 🖐 再次张开 → 收起</div>
   <div id="hint">
     🖐 张开手掌：打开/关闭工具栏<br>
     ☝️ 食指指向：选择工具<br>
@@ -390,6 +390,7 @@
     // Gesture debounce
     palmFrames: 0,
     palmRequired: 8,
+    palmMustDisappear: false,  // prevent accidental close when palm stays open
     spreadFrames: 0,
     spreadRequired: 10,
 
@@ -861,16 +862,19 @@
       if (!STATE.uiVisible && STATE.palmFrames >= STATE.palmRequired) {
         // Open UI panel
         setToolbarVisible(true);
-        statusEl.textContent = '☝️ 用食指选择工具（悬停0.8秒确认）';
-        STATE.palmFrames = 0; // reset counter for close detection
-      } else if (STATE.uiVisible && STATE.palmFrames >= STATE.palmRequired) {
-        // Close UI panel
+        statusEl.textContent = '☝️ 收起手指 → 用食指选择工具（悬停0.8秒确认）';
+        STATE.palmFrames = 0;
+        STATE.palmMustDisappear = true; // must release palm before close is allowed
+      } else if (STATE.uiVisible && STATE.palmFrames >= STATE.palmRequired && !STATE.palmMustDisappear) {
+        // Close UI panel (only after palm has been released once since opening)
         setToolbarVisible(false);
-        statusEl.textContent = '🤏 捏合手指 → 开始写字';
-        STATE.palmFrames = -25; // cooldown to prevent immediate re-trigger
+        statusEl.textContent = '🤏 捏合手指写字 | 🖐 张开手掌调出工具栏';
+        STATE.palmFrames = -25;
       }
     } else {
-      // Drift back toward 0 (handles both positive counts and negative cooldowns)
+      // Palm not open → unlock the close gate
+      if (!pg.openPalm) STATE.palmMustDisappear = false;
+      // Drift back toward 0
       if (STATE.palmFrames > 0) STATE.palmFrames--;
       else if (STATE.palmFrames < 0) STATE.palmFrames++;
     }
